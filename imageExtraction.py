@@ -13,6 +13,8 @@ def extractDocumentData(pdfPath, imageDir, chunkLength,file):
     docChunks = []
     file = file[:-4]
 
+    #test
+
 
     for pageNumber, page in enumerate(doc):
         dict = page.get_text("dict")["blocks"]

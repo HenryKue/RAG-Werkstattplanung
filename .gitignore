@@ -12,3 +12,4 @@
 /chunks.json
 /images/
 *.xlsx
+/imageExtraction.py
