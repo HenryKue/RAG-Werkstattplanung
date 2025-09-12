@@ -11,7 +11,7 @@ jsonTemplate =  """{
     "modelle": [],
     "spezifikationen": []
   } """
-
+ 
 
 specPrompt = {
     "role": "system",

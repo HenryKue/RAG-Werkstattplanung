@@ -1,0 +1,18 @@
+#version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"    # REST API & Web UI
+      - "6334:6334"    # gRPC
+    volumes:
+      # Ändere dies von einem Bind Mount zu einem Named Volume
+      - qdrant-storage:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HOST: 0.0.0.0
+
+# Definiere hier das Named Volume
+volumes:
+  qdrant-storage:

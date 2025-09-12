@@ -1,14 +1,7 @@
-from pinecone import Pinecone
-
 from qdrant_client.models import PointStruct
 from qdrant_client import QdrantClient
-
 from sentence_transformers import SentenceTransformer
-
-import openai
-
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import TextLoader
+#import openai
 
 
 import pymupdf as pymu
@@ -17,23 +10,27 @@ import ollama
 import json
 import hashlib
 import re
+from pathlib import Path
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 
 
 transModel = SentenceTransformer("intfloat/multilingual-e5-large-instruct")
 
-pinecone_client = Pinecone(api_key="pcsk_nZmD6_QScSNNTFfbzFQdvQ2Eq9DKPgLb6eadHtQ2WfGa5AfJ6dq3JxcEUbMx84ckWgFda")
-index_name="audi-test"
-index = pinecone_client.Index(index_name)
 
-client = openai.OpenAI(api_key="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")
+index_name="audi-test"
+
+
+#client = openai.OpenAI(api_key="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")
 
 qClient = QdrantClient(host="localhost", port=6333)
 
-DATA_PATH = "dataTest/"
+DATA_PATH = "../dataTest/"
 
-imageDir = "images/"
+imageDir = "../app/public/images"
+savedImageDir = "images"
 
-path = "pdfTest"
+path = "../pdf"
 outputFile = "modelResults.json"
 
 globalIndex = 0
@@ -140,27 +137,16 @@ autoPrompt = {
 """
 }
 
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=2500,
-    chunk_overlap=1250,
-    length_function=len,
-    add_start_index=True
-)
 
 results = {}
 
-def load_documents(file):
-    loader = TextLoader(os.path.join(DATA_PATH, file), encoding="utf-8")
-    documents = loader.load()
-    return documents
-
-def embedding_model(text):
+def embeddingModel(text):
   passage = "passage: " + text
   return transModel.encode(passage, normalize_embeddings=True).tolist()
 
 
 
-def prompt_builder(system_message, context, filename):
+def promptBuilder(system_message, context, filename):
   return system_message['content'].format(
       filename=filename,
       document=context
@@ -173,7 +159,7 @@ def runModel(modelMessages):
         responseParsed = json.loads(responseContent)
 
         # Validierung und Normalisierung
-        def flatten_list(lst):
+        def flattenList(lst):
             result = []
             for item in lst:
                 if isinstance(item, dict):
@@ -190,8 +176,8 @@ def runModel(modelMessages):
         if not isinstance(responseParsed, dict):
             raise ValueError("Antwort ist kein JSON-Objekt")
 
-        modelle = flatten_list(responseParsed.get("modelle", []))
-        spezifikationen = flatten_list(responseParsed.get("spezifikationen", []))
+        modelle = flattenList(responseParsed.get("modelle", []))
+        spezifikationen = flattenList(responseParsed.get("spezifikationen", []))
         return {
             "message": {
                 "content": json.dumps({
@@ -226,8 +212,8 @@ def audiCheck(specs,i,text,filename):
             newSpecs["spezifikationen"].append(j)
 
     if len(newSpecs["spezifikationen"]) == 0:
-        spec_prompt = prompt_builder(specRecPrompt,text,filename) 
-        spec_messages = [{"role": "system","content": spec_prompt},
+        specPrompt = promptBuilder(specRecPrompt,text,filename) 
+        spec_messages = [{"role": "system","content": specPrompt},
         {"role": "user","content": "Welche Motortypen oder Spezifikationen findest du?"}]
         newResponse = runModel(spec_messages)
         newContent = newResponse["message"]["content"]
@@ -260,16 +246,15 @@ def extractText(path, chunkSize, overlap):
 
     return chunks
 
-def extractDocumentData(pdfPath, imageDir, chunkLength,file):
+def extractDocumentData(pdfPath, imageDir, chunkLength, file):
     doc = pymu.open(pdfPath)
     docChunks = []
     file = file[:-4]
 
-
     for pageNumber, page in enumerate(doc):
         dict = page.get_text("dict")["blocks"]
-        currentChunk=""
-        currentImages=[]
+        currentChunk = ""
+        currentImages = []
 
         images = page.get_images(full=True)
 
@@ -281,31 +266,54 @@ def extractDocumentData(pdfPath, imageDir, chunkLength,file):
                     xref = img[0]
                     imageFilename = f"{file}_page_{pageNumber+1}_{xref}.png"
                     imagePath = os.path.join(imageDir, imageFilename)
-                    pixmap = pymu.Pixmap(doc, xref)
-                    
-                    imgBytes = pixmap.tobytes("png")
-                    imgHash = hashlib.md5(imgBytes).hexdigest()
+                    imagePayloadPath = os.path.join(savedImageDir, file[:10], imageFilename)
+
+                    try:
+                        pixmap = pymu.Pixmap(doc, xref)
+                    except Exception as e:
+                        print(f"❌ Fehler beim Erzeugen des Pixmap (xref={xref}): {e}")
+                        continue
+
+                    # ✅ Farbraum prüfen und ggf. konvertieren
+                    if pixmap.n >= 4 or pixmap.colorspace is None or pixmap.colorspace.name not in ["RGB", "GRAY"]:
+                        try:
+                            pixmap = pymu.Pixmap(pymu.csRGB, pixmap)
+                        except Exception as e:
+                            print(f"❌ Fehler bei Colorspace-Konvertierung (xref={xref}): {e}")
+                            continue
+
+                    # ✅ PNG-Bytes sicher erzeugen
+                    try:
+                        imgBytes = pixmap.tobytes("png")
+                        imgHash = hashlib.md5(imgBytes).hexdigest()
+                    except Exception as e:
+                        print(f"❌ Fehler beim Erzeugen von PNG-Bytes (xref={xref}): {e}")
+                        continue
 
                     if imgHash not in ignoreImages:
-                        if pixmap.n < 5:
+                        ignoreImages.add(imgHash)
+
+                        try:
                             pixmap.save(imagePath)
-                        else:
-                            pixmap = pymu.Pixmap(pymu.csRGB, pixmap)
-                            pixmap.save(imagePath)
-                        currentImages.append(imagePath)
-            
+                        except Exception as e:
+                            print(f"❌ Fehler beim Speichern von Bild (xref={xref}): {e}")
+                            continue
+
+                        currentImages.append(imagePayloadPath)
+
             elif "lines" in block:
                 for line in block["lines"]:
                     blockText = ""
                     for span in line["spans"]:
                         blockText += span["text"] + " "
                     currentChunk += blockText + "\n"
-                    if len(currentChunk) >= (chunkLength/2):
+
+                    if len(currentChunk) >= (chunkLength / 2):
                         docChunks.append({
                             "seiten": pageNumber + 1,
-                            "text": currentChunk,
+                            "text": currentChunk.strip(),
                             "bilder": currentImages
-                        })      
+                        })
                         currentImages = []
                         currentChunk = ""
 
@@ -319,6 +327,8 @@ def extractDocumentData(pdfPath, imageDir, chunkLength,file):
     docChunks = createRealChunks(docChunks)
 
     return docChunks
+
+
 
 def createRealChunks(halfedChunks):
     fullChunks = []
@@ -348,69 +358,6 @@ def startExtraction(pdfPath, imageDir, chunkLength,file):
     else:
         return extractDocumentData(pdfPath, imageDir, chunkLength,file)
 
-#def extractDocumentChapter(pdfPath, imageDir, file):
-#    doc = pymu.open(pdfPath)
-#    docChunks = []
-#    file = file[:-4]
-#
-#    toc = doc.get_toc()
-#    
-#    # Nutze alle TOC-Einträge, sortiert nach Seite
-#    toc_sorted = sorted(toc, key=lambda x: x[2])
-#
-#    for i, (level, title, start_page) in enumerate(toc_sorted):
-#        # Finde Ende des Kapitels
-#        if i + 1 < len(toc_sorted):
-#            end_page = toc_sorted[i + 1][2] - 1
-#        else:
-#            end_page = len(doc)  # Letztes Kapitel bis Ende des Dokuments
-#
-#        startId = start_page - 1
-#        endId = end_page - 1
-#
-#        chapterText = ""
-#        chapterImagePaths = []
-#        chapterPages = []
-#
-#        for page_num in range(startId, endId + 1):
-#            page = doc[page_num]
-#            chapterText += page.get_text()
-#            images = page.get_images(full=True)
-#
-#            for img in images:
-#                xref = img[0]
-#                imageFilename = f"{file}_page_{page_num+1}_{xref}.png"
-#                imagePath = os.path.join(imageDir, imageFilename)
-#
-#                try:
-#                    pixmap = pymu.Pixmap(doc, xref)
-#                except Exception as e:
-#                    print(f"Fehler bei Bild xref {xref} auf Seite {page_num+1}: {e}")
-#                    continue
-                #
-#                imgBytes = pixmap.tobytes("png")
-#                imgHash = hashlib.md5(imgBytes).hexdigest()
-#
-#                if imgHash not in ignoreImages:
-#                    ignoreImages.add(imgHash)
-#                    if pixmap.n < 5:
-#                        pixmap.save(imagePath)
-#                    else:
-#                        pixmap = pymu.Pixmap(pymu.csRGB, pixmap)
-#                        pixmap.save(imagePath)
-#
-#                    chapterImagePaths.append(imagePath)
-#
-#            chapterPages.append(page_num + 1)
-#
-#        docChunks.append({
-#            "kapitel": title.strip(),
-#            "seiten": chapterPages,
-#            "text": chapterText.strip(),
-#            "bilder": chapterImagePaths
-#        })
-#
-#    return docChunks
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200):
     chunks = []
@@ -425,6 +372,8 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
     doc = pymu.open(pdfPath)
     docChunks = []
     file = file[:-4]
+    fileFull = file
+    file = file[:10]
 
     toc = doc.get_toc()
     toc_sorted = sorted(toc, key=lambda x: x[2])
@@ -451,6 +400,11 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
                 xref = img[0]
                 imageFilename = f"{file}_page_{page_num+1}_{xref}.png"
                 imagePath = os.path.join(imageDir, imageFilename)
+                #imagePath = os.path.join(imageDir, imageFilename)
+                imagePathOutput = os.path.join(savedImageDir, fileFull, imageFilename)
+
+
+                os.makedirs(os.path.dirname(imagePath), exist_ok=True)
 
                 try:
                     pixmap = pymu.Pixmap(doc, xref)
@@ -458,18 +412,30 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
                     print(f"Fehler bei Bild xref {xref} auf Seite {page_num+1}: {e}")
                     continue
 
-                imgBytes = pixmap.tobytes("png")
-                imgHash = hashlib.md5(imgBytes).hexdigest()
+                if pixmap.colorspace.name != "RGB":
+                    try:
+                        pixmap = pymu.Pixmap(pymu.csRGB, pixmap)
+                    except Exception as e:
+                        print(f"❌ Fehler bei Colorspace-Konvertierung (xref={xref}): {e}")
+                        continue
+
+                try:
+                    imgBytes = pixmap.tobytes("png")
+                    imgHash = hashlib.md5(imgBytes).hexdigest()
+                except Exception as e:
+                    print(f"❌ Fehler beim Erzeugen von PNG-Bytes (xref={xref}): {e}")
+                    continue
 
                 if imgHash not in ignoreImages:
                     ignoreImages.add(imgHash)
-                    if pixmap.n < 5:
-                        pixmap.save(imagePath)
-                    else:
-                        pixmap = pymu.Pixmap(pymu.csRGB, pixmap)
-                        pixmap.save(imagePath)
+                    try:
+                        pixmap.save(str(imagePath))
+                    except Exception as e:
+                        print(f"❌ Fehler beim Speichern von Bild auf Seite {page_num+1}, xref={xref}:\n{e}")
+                        continue
 
-                    chapterImagePaths.append(imagePath)
+
+                    chapterImagePaths.append(imagePathOutput)
 
             chapterPages.append(page_num + 1)
 
@@ -486,8 +452,6 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
             })
 
     return docChunks
-
-
 
 def validateFirstChapter(pdf_path):
     print(f"\n📄 Datei: {os.path.basename(pdf_path)}")
@@ -529,6 +493,7 @@ def findActualChapterPage(doc, title, toc_page_hint):
             return page_num + 1  # Seitenzahlen beginnen bei 1
     return None
 
+
 for file in os.listdir(path):
     if file.endswith(".pdf"):
         pdfPath = os.path.join(path, file)
@@ -540,15 +505,15 @@ for file in os.listdir(path):
                 text += page.get_text()
         
         #Automodell
-        auto_prompt = prompt_builder(autoPrompt,text[:3000],file)
+        auto_prompt = promptBuilder(autoPrompt,text[:3000],file)
         autoMessages = [{"role": "system","content": auto_prompt},
                 {"role": "user","content": "Welche Autmodelle findest du?"}]
         autoResponse = runModel(autoMessages)
         autoContent = autoResponse["message"]["content"]
 
         #Spezifikationen
-        spec_prompt = prompt_builder(specPrompt,text[:3000],file)
-        spec_messages = [{"role": "system","content": spec_prompt},
+        specPrompt = promptBuilder(specPrompt,text[:3000],file)
+        spec_messages = [{"role": "system","content": specPrompt},
         {"role": "user","content": "Welche Motortypen oder Spezifikationen findest du?"}]
         spec_response = runModel(spec_messages)
         spec_content = audiCheck(spec_response["message"]["content"],0,text[:3000],file)
@@ -563,21 +528,16 @@ for file in os.listdir(path):
 
         print(parsed2)
 
-        fileName = os.path.splitext(file)[0] + ".md"
-        documents = load_documents(fileName)
-
         imageFileDir = os.path.join(imageDir, file[:-4])
         os.makedirs(imageFileDir, exist_ok=True)
 
-        #chunks = text_splitter.split_documents(documents)
-        #chunks = extractText(pdfPath, 2500, 1250)
         chunks = startExtraction(pdfPath,imageFileDir,5000,file)
 
         points = []
 
         for i, chunk in enumerate(chunks):
             if chunk["text"].strip() != "":
-                vector = embedding_model(chunk["text"])
+                vector = embeddingModel(chunk["text"])
                 payload = {
                     "content": chunk["text"] + "\nDieser Text gilt für die folgenden Modelle: " + ", ".join(parsed2["modelle"]) +
                                "\nWeitere Spezifikationen: " + ", ".join(parsed2["spezifikationen"]),
