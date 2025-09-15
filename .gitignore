@@ -1,21 +1,45 @@
-*.xlsx
-/pdf
-/pdfTest
-/pdfMotor
-/PineCone.txt
-/imagesTest
-/chunks.json
-/images/
-/imageExtraction.py
-/qdrant/qdrant_storage
-/summaryAug.py
-/app/public/images/
-/getContext.py
-*vite.svg
-__pycache__/
+#Node / React
+dist
+node_modules
+
+#Assets / Outputs
+images
 *react.svg
-*temp.jsx
-/backend/images
-eslint.config.js
-pdfFehlerTest/
+*vite.svg
+pdf
+pdfTest
+pdfMotor
+imagesTest
+pdfFehlerTest
+
+#Qdrant
+qdrant_storage
+
+#Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+.env.*
+
+# Editor
+.vscode/
+.idea/
+
+# Mac / Windows
+.DS_Store
+Thumbs.db
+
+
+*.xlsx
 vite.config.js
+eslint.config.js
