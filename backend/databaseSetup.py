@@ -1,8 +1,6 @@
 from qdrant_client.models import PointStruct
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
-#import openai
-
 
 import pymupdf as pymu
 import os
@@ -10,18 +8,12 @@ import ollama
 import json
 import hashlib
 import re
-from pathlib import Path
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 
 
 transModel = SentenceTransformer("intfloat/multilingual-e5-large-instruct")
 
-
-index_name="audi-test"
-
-
-#client = openai.OpenAI(api_key="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")
 
 qClient = QdrantClient(host="localhost", port=6333)
 
@@ -151,6 +143,7 @@ def promptBuilder(system_message, context, filename):
       filename=filename,
       document=context
   )
+
 def runModel(modelMessages):
     modelResponse = ollama.chat(model="openhermes", messages=modelMessages)
     responseContent = modelResponse["message"]["content"]
@@ -274,7 +267,7 @@ def extractDocumentData(pdfPath, imageDir, chunkLength, file):
                         print(f"❌ Fehler beim Erzeugen des Pixmap (xref={xref}): {e}")
                         continue
 
-                    # ✅ Farbraum prüfen und ggf. konvertieren
+                    # Farbraum prüfen und ggf. konvertieren
                     if pixmap.n >= 4 or pixmap.colorspace is None or pixmap.colorspace.name not in ["RGB", "GRAY"]:
                         try:
                             pixmap = pymu.Pixmap(pymu.csRGB, pixmap)
@@ -282,7 +275,7 @@ def extractDocumentData(pdfPath, imageDir, chunkLength, file):
                             print(f"❌ Fehler bei Colorspace-Konvertierung (xref={xref}): {e}")
                             continue
 
-                    # ✅ PNG-Bytes sicher erzeugen
+                    # PNG-Bytes sicher erzeugen
                     try:
                         imgBytes = pixmap.tobytes("png")
                         imgHash = hashlib.md5(imgBytes).hexdigest()
@@ -359,16 +352,16 @@ def startExtraction(pdfPath, imageDir, chunkLength,file):
         return extractDocumentData(pdfPath, imageDir, chunkLength,file)
 
 
-def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200):
+def chunkText(text: str, chunkSize: int = 1000, overlap: int = 200):
     chunks = []
     start = 0
     while start < len(text):
-        end = min(start + chunk_size, len(text))
+        end = min(start + chunkSize, len(text))
         chunks.append(text[start:end])
-        start += chunk_size - overlap
+        start += chunkSize - overlap
     return chunks
 
-def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200):
+def extractDocumentChapter(pdfPath, imageDir, file, chunkSize=1000, overlap=200):
     doc = pymu.open(pdfPath)
     docChunks = []
     file = file[:-4]
@@ -376,31 +369,30 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
     file = file[:10]
 
     toc = doc.get_toc()
-    toc_sorted = sorted(toc, key=lambda x: x[2])
+    tocSorted = sorted(toc, key=lambda x: x[2])
 
-    for i, (level, title, start_page) in enumerate(toc_sorted):
-        if i + 1 < len(toc_sorted):
-            end_page = toc_sorted[i + 1][2] - 1
+    for i, (level, title, startPage) in enumerate(tocSorted):
+        if i + 1 < len(tocSorted):
+            endPage = tocSorted[i + 1][2] - 1
         else:
-            end_page = len(doc)
+            endPage = len(doc)
 
-        startId = start_page - 1
-        endId = end_page - 1
+        startId = startPage - 1
+        endId = endPage - 1
 
         chapterText = ""
         chapterImagePaths = []
         chapterPages = []
 
-        for page_num in range(startId, endId + 1):
-            page = doc[page_num]
+        for pageNum in range(startId, endId + 1):
+            page = doc[pageNum]
             chapterText += page.get_text()
             images = page.get_images(full=True)
 
             for img in images:
                 xref = img[0]
-                imageFilename = f"{file}_page_{page_num+1}_{xref}.png"
+                imageFilename = f"{file}_page_{pageNum+1}_{xref}.png"
                 imagePath = os.path.join(imageDir, imageFilename)
-                #imagePath = os.path.join(imageDir, imageFilename)
                 imagePathOutput = os.path.join(savedImageDir, fileFull, imageFilename)
 
 
@@ -409,7 +401,7 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
                 try:
                     pixmap = pymu.Pixmap(doc, xref)
                 except Exception as e:
-                    print(f"Fehler bei Bild xref {xref} auf Seite {page_num+1}: {e}")
+                    print(f"Fehler bei Bild xref {xref} auf Seite {pageNum+1}: {e}")
                     continue
 
                 if pixmap.colorspace.name != "RGB":
@@ -431,16 +423,16 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
                     try:
                         pixmap.save(str(imagePath))
                     except Exception as e:
-                        print(f"❌ Fehler beim Speichern von Bild auf Seite {page_num+1}, xref={xref}:\n{e}")
+                        print(f"❌ Fehler beim Speichern von Bild auf Seite {pageNum+1}, xref={xref}:\n{e}")
                         continue
 
 
                     chapterImagePaths.append(imagePathOutput)
 
-            chapterPages.append(page_num + 1)
+            chapterPages.append(pageNum + 1)
 
         chapterText = chapterText.strip()
-        textChunks = chunk_text(chapterText, chunk_size=chunk_size, overlap=overlap)
+        textChunks = chunkText(chapterText, chunkSize=chunkSize, overlap=overlap)
 
         for chunk in textChunks:
             docChunks.append({
@@ -453,10 +445,10 @@ def extractDocumentChapter(pdfPath, imageDir, file, chunk_size=1000, overlap=200
 
     return docChunks
 
-def validateFirstChapter(pdf_path):
-    print(f"\n📄 Datei: {os.path.basename(pdf_path)}")
+def validateFirstChapter(pdfPath):
+    print(f"\n📄 Datei: {os.path.basename(pdfPath)}")
     try:
-        doc = pymu.open(pdf_path)
+        doc = pymu.open(pdfPath)
     except Exception as e:
         print(f"❌ Fehler beim Öffnen: {e}")
         return
@@ -467,30 +459,30 @@ def validateFirstChapter(pdf_path):
         return
 
     # Nur erstes Kapitel auf erster Ebene
-    for level, title, toc_page in toc:
+    for level, title, tocPage in toc:
         if level == 1:
-            actual_page = findActualChapterPage(doc, title, toc_page)
+            actual_page = findActualChapterPage(doc, title, tocPage)
             if actual_page is None:
-                print(f"   ❓ Kapitel '{title}' nicht im Text gefunden (TOC: {toc_page})")
+                print(f"   ❓ Kapitel '{title}' nicht im Text gefunden (TOC: {tocPage})")
                 return False
-            elif actual_page != toc_page:
-                print(f"   ⚠️ Kapitel '{title}' - TOC: {toc_page}, Tatsächlich: {actual_page}")
+            elif actual_page != tocPage:
+                print(f"   ⚠️ Kapitel '{title}' - TOC: {tocPage}, Tatsächlich: {actual_page}")
                 return False
             else:
-                print(f"   ✅ Kapitel '{title}' beginnt korrekt auf Seite {toc_page}")
+                print(f"   ✅ Kapitel '{title}' beginnt korrekt auf Seite {tocPage}")
                 return True
             
 def normalize(text):
     """Bereinigt Text für robusteren Vergleich."""
     return re.sub(r'\s+', ' ', re.sub(r'[^a-zA-Z0-9]', ' ', text)).strip().lower()
 
-def findActualChapterPage(doc, title, toc_page_hint):
+def findActualChapterPage(doc, title, tocPageHint):
     """Sucht nach dem tatsächlichen Vorkommen des Kapiteltitels."""
-    norm_title = normalize(title)
-    for page_num in range(max(0, toc_page_hint - 1), min(len(doc), toc_page_hint + 5)):
-        text = doc[page_num].get_text()
-        if norm_title in normalize(text):
-            return page_num + 1  # Seitenzahlen beginnen bei 1
+    normTitle = normalize(title)
+    for pageNum in range(max(0, tocPageHint - 1), min(len(doc), tocPageHint + 5)):
+        text = doc[pageNum].get_text()
+        if normTitle in normalize(text):
+            return pageNum + 1  # Seitenzahlen beginnen bei 1
     return None
 
 
@@ -505,25 +497,25 @@ for file in os.listdir(path):
                 text += page.get_text()
         
         #Automodell
-        auto_prompt = promptBuilder(autoPrompt,text[:3000],file)
-        autoMessages = [{"role": "system","content": auto_prompt},
+        autoPrompt = promptBuilder(autoPrompt,text[:3000],file)
+        autoMessages = [{"role": "system","content": autoPrompt},
                 {"role": "user","content": "Welche Autmodelle findest du?"}]
         autoResponse = runModel(autoMessages)
         autoContent = autoResponse["message"]["content"]
 
         #Spezifikationen
         specPrompt = promptBuilder(specPrompt,text[:3000],file)
-        spec_messages = [{"role": "system","content": specPrompt},
+        specMessages = [{"role": "system","content": specPrompt},
         {"role": "user","content": "Welche Motortypen oder Spezifikationen findest du?"}]
-        spec_response = runModel(spec_messages)
-        spec_content = audiCheck(spec_response["message"]["content"],0,text[:3000],file)
+        specResponse = runModel(specMessages)
+        specContent = audiCheck(specResponse["message"]["content"],0,text[:3000],file)
 
         parsed2 = json.loads(jsonTemplate)
 
         data2 = json.loads(autoContent)
         parsed2["modelle"] = data2.get("modelle", [])
 
-        data2 = json.loads(spec_content)
+        data2 = json.loads(specContent)
         parsed2["spezifikationen"] = data2.get("spezifikationen", [])
 
         print(parsed2)
@@ -554,13 +546,13 @@ for file in os.listdir(path):
 
                 globalIndex += 1
 
-        # Hilfsfunktion für Batches (bleibt gleich)
-        def chunk_list(lst, chunk_size):
+        # Hilfsfunktion für Batches
+        def chunkList(lst, chunk_size):
             for j in range(0, len(lst), chunk_size):
                 yield lst[j:j + chunk_size]
 
         # Upload in Batches zu Qdrant
-        for batch in chunk_list(points, 100):
+        for batch in chunkList(points, 100):
             qClient.upsert(collection_name="werkstattplaner_senTran", points=batch)
 
         print(f"Uploaded {len(chunks)} Embeddings to Qdrant!")

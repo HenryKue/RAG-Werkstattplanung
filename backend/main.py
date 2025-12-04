@@ -4,19 +4,15 @@ from qdrant_client import QdrantClient
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from fastapi.responses import JSONResponse
-import os
-import openai
 
 TF_ENABLE_ONEDNN_OPTS = 0
 
 
 qClient = QdrantClient(host="localhost", port=6333)
-client = openai.OpenAI(api_key="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")
 transModel = SentenceTransformer("intfloat/multilingual-e5-large-instruct")
 
 
-def embedding_model(text):
+def embeddingModel(text):
   passage = "query: " + text
   return transModel.encode(passage, normalize_embeddings=True).tolist()
 
@@ -60,8 +56,7 @@ Du bist ein technischer Assistent für Werkstattpersonal in einer Autowerkstatt.
 **Verbindliche Regeln:**
 1. Verwende **ausschließlich Informationen aus dem bereitgestellten Kontext**. Ziehe **kein externes Wissen** oder vortrainiertes Wissen hinzu.
 2. **Ignoriere irrelevante Passagen**. Nutze nur Inhalte, die **klar und direkt zur gestellten Aufgabe passen**.
-3. Wenn die gestellte Aufgabe mit dem Kontext **nicht beantwortet werden kann**, gib exakt folgenden Satz aus:  
-   _"Das weiß ich leider noch nicht."_
+
 4. Gib die Anleitung als **nummerierte Liste** mit **präzisen, handlungsorientierten Arbeitsschritten** aus - ohne Einleitungen, Erklärungen oder Wiederholungen.
 5. Verwende **technisch korrekte Fachsprache** und **grammatikalisch saubere Sätze**. Deine Zielgruppe ist **geschultes Werkstattpersonal**, keine Laien.
 
@@ -72,12 +67,8 @@ Kontext:
 """
 }
 
-
-
-
-
 def ragChatbot(query):
-    query_embedding = embedding_model(query)
+    query_embedding = embeddingModel(query)
     best_match = retrieveDatabase(query_embedding,3)
     augmented_prompt = prompt_builder(system_prompt,best_match)
 
@@ -91,23 +82,10 @@ def ragChatbot(query):
        "images": images
     }
     return answerImg
-    #return (response["message"]["content"])
-
-#    response = client.chat.completions.create(
-#      model="gpt-4.1",
-#      messages=messages,
-#      max_tokens=1500
-#    )
-#    images = getImages(response.choices[0].message.content)
-#    answerImg = {
-#       "answer": responseresponse.choices[0].message.content,
-#       "images": images
-#    }
-#    return answerImg
 
 
 def getImages(answer):
-   embedding = embedding_model(answer)
+   embedding = embeddingModel(answer)
    entry = retrieveImages(embedding,1)
    return entry[0].payload.get("bilder", "")
 
@@ -125,10 +103,10 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # oder ["*"] für Entwicklung (unsicher in Prod)
+    allow_origins=origins,            
     allow_credentials=True,
-    allow_methods=["*"],              # GET, POST, etc.
-    allow_headers=["*"],              # Content-Type, Authorization, etc.
+    allow_methods=["*"],              
+    allow_headers=["*"],              
 )
 
 class Query(BaseModel):

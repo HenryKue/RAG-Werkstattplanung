@@ -39,6 +39,8 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Keys
+*Key*
 
 *.xlsx
 vite.config.js

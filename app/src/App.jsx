@@ -43,8 +43,7 @@ function App() {
 
 
       const answerText = data.Answer;
-      const imagePaths = data.Images || []; // leeres Array, falls keine Bilder
-
+      const imagePaths = data.Images || [];
 
       const aiMessage = {
         message: answerText,
