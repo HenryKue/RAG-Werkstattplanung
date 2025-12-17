@@ -36,13 +36,6 @@ Matching von Text und Bildern
 
 Evaluationspipeline (Inhalt, Sprache, Bildkonsistenz)
 
-📄 Beispiel (Dummy-Daten)
-
-Eingabe:
-„Wie tausche ich die Batterie bei Modell A?“
-
-Ausgabe:
-(… Beispiel generierter Text auf Basis von Dummy-Chunks …)
 
 🧪 Evaluation
 
